@@ -77,6 +77,7 @@ typedef struct _WebExtensionsSession
 
   int standard_input;
   int standard_output;
+  int standard_error;
 } WebExtensionsSession;
 
 typedef struct _WebExtensionsSessionClass
@@ -130,6 +131,11 @@ web_extensions_session_close (Session *session)
       close (we_session->standard_output);
       we_session->standard_output = -1;
     }
+  if (we_session->standard_error >= 0)
+    {
+      close (we_session->standard_error);
+      we_session->standard_error = -1;
+    }
 }
 
 static void
@@ -138,7 +144,6 @@ web_extensions_session_finalize (GObject *object)
   Session *session = (Session *)object;
 
   web_extensions_session_close (session);
-
   G_OBJECT_CLASS (web_extensions_session_parent_class)->finalize (object);
 }
 
@@ -424,7 +429,7 @@ handle_start_in_thread (GTask *task,
                                  &we_session->child_pid,
                                  &we_session->standard_input,
                                  &we_session->standard_output,
-                                 NULL, /* standard_error */
+                                 &we_session->standard_error,
                                  &error))
     {
       we_session->child_pid = -1;
@@ -517,7 +522,7 @@ handle_get_pipes (XdpDbusWebExtensions *object,
   Session *session;
   WebExtensionsSession *we_session;
   g_autoptr(GUnixFDList) out_fd_list = NULL;
-  int stdin_id, stdout_id;
+  int stdin_id, stdout_id, stderr_id;
   g_autoptr(GError) error = NULL;
 
   session = acquire_session_from_call (arg_session_handle, call);
@@ -567,9 +572,22 @@ handle_get_pipes (XdpDbusWebExtensions *object,
       return TRUE;
     }
 
+  stderr_id = g_unix_fd_list_append (
+    out_fd_list, we_session->standard_error, &error);
+  if (stderr_id == -1)
+    {
+      g_dbus_method_invocation_return_error (invocation,
+                                             G_DBUS_ERROR,
+                                             G_DBUS_ERROR_ACCESS_DENIED,
+                                             "Failed to append fd: %s",
+                                             error->message);
+      return TRUE;
+    }
+
   xdp_dbus_web_extensions_complete_get_pipes (object, invocation, out_fd_list,
                                               g_variant_new_handle (stdin_id),
-                                              g_variant_new_handle (stdout_id));
+                                              g_variant_new_handle (stdout_id),
+                                              g_variant_new_handle (stderr_id));
   return TRUE;
 }
 
