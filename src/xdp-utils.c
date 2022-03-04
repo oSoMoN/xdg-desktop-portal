@@ -554,6 +554,24 @@ xdp_app_info_has_network (XdpAppInfo *app_info)
   return has_network;
 }
 
+/* Is the app allowed to start WebExtensions native messaging servers? */
+gboolean
+xdp_app_info_is_web_browser  (XdpAppInfo  *app_info)
+{
+  gboolean is_web_browser;
+
+  /* TODO: implement appropriate static permission checks for Flatpaks and snaps */
+  switch (app_info->kind)
+    {
+    case XDP_APP_INFO_KIND_HOST:
+    default:
+      is_web_browser = TRUE;
+      break;
+    }
+  return is_web_browser;
+}
+
+
 static void
 ensure_app_info_by_unique_name (void)
 {

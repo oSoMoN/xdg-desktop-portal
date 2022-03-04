@@ -188,6 +188,15 @@ handle_create_session (XdpDbusWebExtensions *object,
   g_autoptr(GError) error = NULL;
   Session *session;
 
+  if (!xdp_app_info_is_web_browser (call->app_info))
+    {
+      g_dbus_method_invocation_return_error (invocation,
+                                             G_DBUS_ERROR,
+                                             G_DBUS_ERROR_ACCESS_DENIED,
+                                             "cannot start WebExtensions native messaging servers");
+      return TRUE;
+    }
+
   session = (Session *)web_extensions_session_new (arg_options, call, connection, &error);
   if (!session)
     {
