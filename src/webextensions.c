@@ -254,34 +254,59 @@ array_contains (JsonArray *array,
   return FALSE;
 }
 
+static GStrv
+get_manifest_search_path (void)
+{
+  const char *hosts_path_str;
+  g_autoptr(GPtrArray) search_path = NULL;
+
+  hosts_path_str = g_getenv ("XDG_DESKTOP_PORTAL_WEB_EXTENSIONS_PATH");
+  if (hosts_path_str != NULL)
+    return g_strsplit (hosts_path_str, ":", -1);
+
+  /* By default, use the native messaging search paths of Firefox,
+   * Chrome, and Chromium, as documented here:
+   *
+   * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_manifests#manifest_location
+   * https://developer.chrome.com/docs/apps/nativeMessaging/#native-messaging-host-location
+   */
+
+  search_path = g_ptr_array_new_with_free_func (g_free);
+  /* Add per-user directories */
+  g_ptr_array_add (search_path, g_build_filename (g_get_home_dir (), ".mozilla", "native-messaging-hosts", NULL));
+  g_ptr_array_add (search_path, g_build_filename (g_get_user_config_dir (), "google-chrome", "NativeMessagingHosts", NULL));
+  g_ptr_array_add (search_path, g_build_filename (g_get_user_config_dir (), "chromium", "NativeMessagingHosts", NULL));
+
+  /* Add system wide directories */
+  g_ptr_array_add (search_path, g_strdup ("/usr/lib/mozilla/native-messaging-hosts"));
+  g_ptr_array_add (search_path, g_strdup ("/etc/opt/chrome/native-messaging-hosts"));
+  g_ptr_array_add (search_path, g_strdup ("/etc/chromium/native-messaging-hosts"));
+
+  g_ptr_array_add (search_path, NULL);
+  return (GStrv)g_ptr_array_steal (search_path, NULL);
+}
+
 static char *
 find_server (const char *server_name,
              const char *extension_or_origin,
              char **server_description,
              GError **error)
 {
-  const char *hosts_path_str;
-  g_auto(GStrv) hosts_path;
+  g_auto(GStrv) search_path;
   g_autoptr(JsonParser) parser = NULL;
   int i;
 
-  hosts_path_str = g_getenv ("XDG_DESKTOP_PORTAL_WEB_EXTENSIONS_PATH");
-  if (hosts_path_str == NULL)
-    {
-      hosts_path_str = "/usr/lib/mozilla/native-messaging-hosts:/etc/opt/chrome/native-messaging-hosts:/etc/chromium/native-messaging-hosts";
-    }
-
-  hosts_path = g_strsplit (hosts_path_str, ":", -1);
+  search_path = get_manifest_search_path ();
   parser = json_parser_new ();
 
-  for (i = 0; hosts_path[i] != NULL; i++)
+  for (i = 0; search_path[i] != NULL; i++)
     {
       g_autoptr(GFile) dir = NULL;
       g_autoptr(GFileEnumerator) enumerator = NULL;
-      dir = g_file_new_for_path (hosts_path[i]);
-      enumerator = g_file_enumerate_children (dir, "*", G_FILE_QUERY_INFO_NONE, NULL, error);
+      dir = g_file_new_for_path (search_path[i]);
+      enumerator = g_file_enumerate_children (dir, "*", G_FILE_QUERY_INFO_NONE, NULL, NULL);
       if (enumerator == NULL)
-        return NULL;
+        continue;
 
       while (TRUE)
         {
@@ -296,7 +321,7 @@ find_server (const char *server_name,
           if (!g_str_has_suffix (name, ".json"))
             continue;
 
-          metadata_filename = g_build_filename (hosts_path[i], name, NULL);
+          metadata_filename = g_build_filename (search_path[i], name, NULL);
           if (!json_parser_load_from_file (parser, metadata_filename, error))
             return NULL;
 
