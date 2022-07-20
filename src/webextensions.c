@@ -97,6 +97,7 @@ web_extensions_session_init (WebExtensionsSession *session)
 
   session->standard_input = -1;
   session->standard_output = -1;
+  session->standard_error = -1;
 }
 
 static void
